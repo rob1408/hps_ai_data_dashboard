@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>H&PS AI & Data Delivery and Governance</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f7f7f8;--surface:#ffffff;--surface2:#f0f0f2;
+  --border:#e2e2e6;--border2:#c8c8ce;
+  --text:#18181b;--text2:#52525b;--text3:#a1a1aa;
+  --purple:#534AB7;--purple-light:#EEEDFE;--purple-dark:#3C3489;
+  --green:#1D9E75;--green-light:#E1F5EE;--green-dark:#0F6E56;
+  --amber:#D97706;--amber-light:#FEF3C7;--amber-dark:#92400E;
+  --blue:#185FA5;--blue-light:#E6F1FB;--blue-dark:#0C447C;
+  --gray:#71717a;--gray-light:#F1EFE8;--gray-dark:#3f3f46;
+  --red:#dc2626;
+  --radius:8px;--radius-lg:12px;
+  --shadow:0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md:0 4px 12px rgba(0,0,0,0.1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit}
+
+/* ─── LAYOUT ─── */
+#view-matrix,#view-dashboard{display:none}
+#view-matrix.active,#view-dashboard.active{display:block}
+.page{max-width:960px;margin:0 auto;padding:24px 20px}
+
+/* ─── LOADING ─── */
+#loading-screen{position:fixed;inset:0;background:var(--bg);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+#loading-screen.hidden{display:none}
+.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--purple);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:13px;color:var(--text3)}
+
+/* ─── SYNC INDICATOR ─── */
+.sync-dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px;transition:background .3s}
+.sync-dot.syncing{background:var(--amber);animation:pulse .8s ease-in-out infinite}
+.sync-dot.error{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.sync-status{font-size:11px;color:var(--text3);display:flex;align-items:center}
+
+/* ─── HEADER ─── */
+.page-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+.page-title{font-size:17px;font-weight:600;color:var(--text)}
+.page-subtitle{font-size:12px;color:var(--text3);margin-top:3px}
+
+/* ─── STAT CARDS ─── */
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:20px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.stat:hover,.stat.active{border-color:var(--purple);box-shadow:0 0 0 3px rgba(83,74,183,.1)}
+.stat-label{font-size:11px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:.5px}
+.stat-val{font-size:26px;font-weight:700;margin-top:4px}
+.stat-val.green{color:var(--green)}
+.stat-val.amber{color:var(--amber)}
+
+/* ─── FILTER BAR ─── */
+.filter-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.filter-label{font-size:11px;color:var(--text3);font-weight:500;margin-right:2px}
+.fbtn{font-size:12px;padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text2);transition:all .15s;display:flex;align-items:center;gap:5px}
+.fbtn.fbtn-dash{background:#3C3489;color:#fff;border-color:#3C3489;font-weight:600;padding:4px 14px;margin-left:auto}
+.fbtn.fbtn-dash:hover{background:#534AB7;border-color:#534AB7}
+.fbtn:hover:not(.fbtn-dash):not(.active){background:var(--surface2)}
+.fbtn.active{border-color:var(--purple);background:var(--purple-light);color:var(--purple-dark)}
+.fbtn .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+
+/* ─── MATRIX TABLE ─── */
+.matrix-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)}
+table.matrix{width:100%;border-collapse:collapse}
+table.matrix th,table.matrix td{border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:top}
+table.matrix th:last-child,table.matrix td:last-child{border-right:none}
+table.matrix tr:last-child td{border-bottom:none}
+table.matrix thead th{background:var(--surface2);font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;padding:10px 12px}
+.th-account{text-align:left;width:130px}
+.th-initiatives{text-align:left}
+.acct-cell{background:var(--surface2);width:130px;padding:10px 12px;text-align:left;vertical-align:middle}
+.acct-name{font-size:12px;font-weight:600;color:var(--text);line-height:1.3}
+.inits-cell{padding:8px 10px;background:var(--surface)}
+.inits-list{min-height:4px}
+.init-row{display:flex;align-items:flex-start;gap:6px;padding:3px 2px;border-radius:4px;transition:background .12s;position:relative;cursor:default}
+.init-row:hover{background:var(--surface2)}
+.init-row.dragging{opacity:.4;background:var(--purple-light)}
+.init-row.drag-over{border-top:2px solid var(--purple)}
+.drag-handle{flex-shrink:0;cursor:grab;color:var(--text3);font-size:12px;line-height:1;padding:2px 1px;margin-top:2px;opacity:0;transition:opacity .12s;user-select:none}
+.init-row:hover .drag-handle{opacity:1}
+.drag-handle:active{cursor:grabbing}
+.init-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.init-text{font-size:12px;line-height:1.45;color:var(--text);flex:1}
+.init-actions{display:none;gap:3px;flex-shrink:0}
+.init-row:hover .init-actions{display:flex}
+.init-row.faded{opacity:.18}
+.ia-btn{background:none;border:none;padding:2px 4px;border-radius:3px;font-size:11px;color:var(--text3);transition:all .12s}
+.ia-btn:hover{background:var(--border);color:var(--text)}
+.ia-btn.del:hover{background:#fee2e2;color:var(--red)}
+.ia-btn.done:hover{background:var(--green-light);color:var(--green-dark)}
+.add-init-btn{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3);background:none;border:none;padding:4px 2px;margin-top:2px;border-radius:4px;transition:all .12s;width:100%}
+.add-init-btn:hover{color:var(--purple);background:var(--purple-light)}
+.empty-cell{font-size:11px;color:var(--text3);font-style:italic;padding:3px 0}
+
+/* ─── STATUS PILL ─── */
+.spill{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;letter-spacing:.2px}
+.spill.green{background:var(--green-light);color:var(--green-dark)}
+.spill.amber{background:var(--amber-light);color:var(--amber-dark)}
+.spill.blue{background:var(--blue-light);color:var(--blue-dark)}
+.spill.gray{background:var(--gray-light);color:var(--gray-dark)}
+.spill.purple{background:var(--purple-light);color:var(--purple-dark)}
+
+/* ─── BACK BUTTON ─── */
+.back-btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:6px 14px;transition:all .15s;font-weight:500}
+.back-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-light)}
+.back-btn svg{width:14px;height:14px;flex-shrink:0}
+
+/* ─── PROJECT DASHBOARD ─── */
+.dash-header{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+.dash-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow)}
+.ds-title-row{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface2)}
+.ds-title{font-size:13px;font-weight:600;color:var(--text)}
+.ds-add-btn{font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);transition:all .15s}
+.ds-add-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-light)}
+.proj-table{width:100%;border-collapse:collapse}
+.proj-table th{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface);text-align:left}
+.proj-table td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}
+.proj-table tr:last-child td{border-bottom:none}
+.proj-table tr:hover td{background:var(--surface2)}
+.proj-row-dragging td{opacity:.4;background:var(--purple-light) !important}
+.proj-row-dragover td:first-child{border-left:3px solid var(--purple)}
+.proj-drag-handle{cursor:grab;color:var(--text3);font-size:13px;opacity:0;transition:opacity .12s;padding:0 4px 0 0;user-select:none;flex-shrink:0}
+.proj-drag-handle:active{cursor:grabbing}
+tr:hover .proj-drag-handle{opacity:1}
+.proj-name-wrap{display:flex;align-items:flex-start;gap:4px}
+.proj-name-cell{position:relative;cursor:default;max-width:260px}
+.proj-name-text{font-size:12px;color:var(--text);line-height:1.4}
+.proj-actions-list{margin-top:6px;display:flex;flex-direction:column;gap:3px}
+.proj-action-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)}
+.proj-action-dot{width:5px;height:5px;border-radius:50%;background:var(--purple);flex-shrink:0}
+.proj-tooltip{display:none;position:absolute;left:0;top:calc(100% + 4px);z-index:50;background:var(--text);color:#fff;border-radius:var(--radius);padding:10px 12px;min-width:220px;max-width:300px;box-shadow:var(--shadow-md);pointer-events:none}
+.proj-name-cell:hover .proj-tooltip{display:block}
+.proj-tooltip-label{font-size:10px;font-weight:600;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+.proj-tooltip-val{font-size:11px;color:#fff;line-height:1.4;margin-bottom:8px}
+.proj-tooltip-val:last-child{margin-bottom:0}
+.proj-tooltip-empty{font-size:11px;color:rgba(255,255,255,.4);font-style:italic}
+.proj-actions-col{vertical-align:top;padding:8px 12px}
+.proj-actions-col .proj-action-item{display:flex;align-items:flex-start;gap:5px;font-size:11px;color:var(--text2);padding:1px 0;line-height:1.4}
+.proj-actions-col .proj-action-dot{width:5px;height:5px;border-radius:50%;background:var(--purple);flex-shrink:0;margin-top:4px}
+.proj-act-cell{white-space:nowrap;vertical-align:middle}
+.proj-act-btn{background:none;border:none;padding:2px 6px;border-radius:3px;font-size:11px;color:var(--text3);transition:all .12s;margin-left:2px}
+.proj-act-btn:hover{background:var(--surface2);color:var(--text)}
+.proj-act-btn.del:hover{background:#fee2e2;color:var(--red)}
+.month-cell{font-size:11px;color:var(--text2)}
+.month-none{color:var(--text3);font-style:italic}
+
+/* ─── MODAL ─── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center;padding:16px}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--surface);border-radius:var(--radius-lg);padding:20px 22px;max-width:480px;width:100%;position:relative;box-shadow:var(--shadow-md);max-height:90vh;overflow-y:auto}
+.modal-box h3{font-size:15px;font-weight:600;color:var(--text);margin-bottom:14px}
+.modal-field{margin-bottom:12px}
+.modal-field label{display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}
+.modal-field input,.modal-field select,.modal-field textarea{width:100%;font-size:13px;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--radius);outline:none;background:var(--surface)}
+.modal-field input:focus,.modal-field select:focus,.modal-field textarea:focus{border-color:var(--purple);box-shadow:0 0 0 3px rgba(83,74,183,.12)}
+.modal-field textarea{resize:vertical;min-height:70px;line-height:1.5}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.btn-primary{font-size:13px;padding:7px 18px;border-radius:var(--radius);border:none;background:var(--purple);color:#fff;font-weight:500;transition:background .15s}
+.btn-primary:hover{background:var(--purple-dark)}
+.btn-secondary{font-size:13px;padding:7px 14px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--surface);color:var(--text2);font-weight:500;transition:all .15s}
+.btn-secondary:hover{background:var(--surface2)}
+.mclose{position:absolute;top:12px;right:14px;background:none;border:none;font-size:18px;color:var(--text3);line-height:1;padding:2px 5px;border-radius:3px}
+.mclose:hover{color:var(--text);background:var(--surface2)}
+
+/* ─── CLIENT DROPDOWN ─── */
+.client-select-wrap{display:flex;align-items:center;gap:8px;margin-bottom:18px}
+.client-select-wrap label{font-size:12px;font-weight:600;color:var(--text2)}
+.client-select-wrap select{font-size:13px;padding:6px 10px;border:1px solid var(--border2);border-radius:var(--radius);outline:none;background:var(--surface);min-width:200px}
+.dash-filter-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.client-coming-soon{padding:40px 20px;text-align:center;color:var(--text3);font-size:13px}
+.client-coming-title{font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px}
+
+/* ─── ACTION LIST IN MODAL ─── */
+.action-list{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-top:4px}
+.action-list-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text)}
+.action-list-item:last-child{border-bottom:none}
+.action-list-item span{flex:1}
+.action-remove-btn{background:none;border:none;color:var(--text3);font-size:13px;padding:1px 4px;border-radius:3px;line-height:1}
+.action-remove-btn:hover{background:#fee2e2;color:var(--red)}
+.action-add-row{display:flex;gap:6px;margin-top:6px}
+.action-add-row input{flex:1;font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:var(--radius);outline:none}
+.action-add-row input:focus{border-color:var(--purple)}
+.action-add-row button{font-size:12px;padding:5px 12px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--surface);color:var(--text2)}
+.action-add-row button:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-light)}
+.action-empty{font-size:12px;color:var(--text3);font-style:italic;padding:8px 10px}
+
+/* ─── TOAST ─── */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--text);color:#fff;font-size:12px;padding:8px 14px;border-radius:var(--radius);box-shadow:var(--shadow-md);z-index:500;opacity:0;transform:translateY(6px);transition:all .25s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+
+@media(max-width:600px){.stats{grid-template-columns:1fr 1fr}.page{padding:14px 12px}}
+</style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading-screen">
+  <div class="spinner"></div>
+  <div class="loading-text">Connecting to database…</div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- ═══ MAIN MATRIX ═══ -->
+<div id="view-matrix" class="active">
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">H&amp;PS AI &amp; Data Delivery and Governance</div>
+      <div class="page-subtitle">April 2026 &nbsp;·&nbsp; Internal Accenture use</div>
+    </div>
+    <div class="sync-status"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">Live</span></div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="filter-bar">
+    <span class="filter-label">Filter:</span>
+    <button class="fbtn active" id="fb-all" onclick="setFilter('all')">All</button>
+    <button class="fbtn" id="fb-green" onclick="setFilter('green')"><span class="dot" style="background:var(--green)"></span>In Progress</button>
+    <button class="fbtn" id="fb-amber" onclick="setFilter('amber')"><span class="dot" style="background:var(--amber)"></span>To Do</button>
+    <button class="fbtn fbtn-dash" onclick="window.open(window.location.href.split('?')[0]+'?view=dashboard','_blank')">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+      Project Dashboard
+    </button>
+  </div>
+
+  <div class="matrix-card">
+    <table class="matrix">
+      <thead><tr>
+        <th class="th-account">Account</th>
+        <th class="th-initiatives">Actions</th>
+      </tr></thead>
+      <tbody id="matrix-body"></tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- ═══ PROJECT DASHBOARD ═══ -->
+<div id="view-dashboard">
+<div class="page">
+  <div class="dash-header">
+    <div>
+      <div class="page-title">H&amp;PS AI &amp; Data Project Dashboard</div>
+      <div class="page-subtitle">Ministry of Defence &nbsp;·&nbsp; May 2026</div>
+    </div>
+    <div class="sync-status" style="margin-left:auto"><span class="sync-dot" id="sync-dot2"></span><span id="sync-label2">Live</span></div>
+  </div>
+
+  <div class="client-select-wrap">
+    <label for="cg-select">Client group:</label>
+    <select id="cg-select" onchange="onClientGroupChange(this.value)">
+      <option value="">— Select client group —</option>
+      <option value="central-gov">Central Government</option>
+      <option value="dwp">DWP</option>
+      <option value="defra">Defra</option>
+      <option value="health">Health</option>
+      <option value="hmrc">HMRC</option>
+      <option value="ireland">Ireland</option>
+      <option value="mod" selected>Ministry of Defence</option>
+      <option value="postal">Postal</option>
+      <option value="public-safety">Public Safety</option>
+    </select>
+  </div>
+
+  <div class="dash-filter-bar">
+    <span class="filter-label">Filter:</span>
+    <button class="fbtn active" id="dfb-all" onclick="setDashFilter('all')">All</button>
+    <button class="fbtn" id="dfb-delivery" onclick="setDashFilter('delivery')"><span class="dot" style="background:var(--green)"></span>In flight</button>
+    <button class="fbtn" id="dfb-shaping" onclick="setDashFilter('shaping')"><span class="dot" style="background:var(--blue)"></span>Shaping</button>
+    <button class="fbtn" id="dfb-tender" onclick="setDashFilter('tender')"><span class="dot" style="background:var(--amber)"></span>Tender</button>
+    <button class="fbtn" id="dfb-opp" onclick="setDashFilter('opp')"><span class="dot" style="background:#aaa"></span>Opportunity</button>
+  </div>
+  <div id="dash-content"></div>
+</div>
+</div>
+
+<!-- ═══ MODAL: Edit action ═══ -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal-box">
+    <button class="mclose" onclick="closeEditModal()">&#x2715;</button>
+    <h3 id="edit-modal-title">Edit action</h3>
+    <div class="modal-field">
+      <label>Action text</label>
+      <input type="text" id="em-text" placeholder="Describe the action…">
+    </div>
+    <div class="modal-field">
+      <label>Status</label>
+      <select id="em-status">
+        <option value="green">In Progress</option>
+        <option value="amber">To Do</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeEditModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveEditModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: Edit project ═══ -->
+<div class="modal-overlay" id="proj-modal">
+  <div class="modal-box">
+    <button class="mclose" onclick="closeProjModal()">&#x2715;</button>
+    <h3 id="proj-modal-title">Edit project</h3>
+    <div class="modal-field">
+      <label>Project name</label>
+      <input type="text" id="pm-name" placeholder="Project name…">
+    </div>
+    <div class="modal-field">
+      <label>Type</label>
+      <select id="pm-type">
+        <option value="delivery">In flight delivery</option>
+        <option value="shaping">Shaping</option>
+        <option value="tender">Competitive tender</option>
+        <option value="sold">Sold – TBC</option>
+        <option value="opp">Opportunity</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label>Owner</label>
+      <input type="text" id="pm-owner" placeholder="Owner name(s)…">
+    </div>
+    <div class="modal-field">
+      <label>Description</label>
+      <textarea id="pm-desc" placeholder="Brief description of the project…"></textarea>
+    </div>
+    <div class="modal-field">
+      <label>Target completion month</label>
+      <input type="month" id="pm-month">
+    </div>
+    <div class="modal-field">
+      <label>Actions</label>
+      <div id="pm-actions-list"></div>
+      <div class="action-add-row">
+        <input type="text" id="pm-action-input" placeholder="Add an action…" onkeydown="if(event.key==='Enter'){event.preventDefault();addProjAction();}">
+        <button onclick="addProjAction()">+ Add</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeProjModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveProjModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+// SUPABASE SETUP
+// ══════════════════════════════════════════
+const SUPA_URL = 'https://imcbxtywefdnjjnowllm.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImltY2J4dHl3ZWZkbmpqbm93bGxtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Mjc2MDgsImV4cCI6MjA5MzIwMzYwOH0.rCUEKmPwEnJlFbH8i7jL57ydNU-vBVl7nbmkA4U5OI4';
+const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+// ══════════════════════════════════════════
+// CONSTANTS
+// ══════════════════════════════════════════
+const accounts = ['HMRC','Ministry of Defence','Public Safety','Health','DWP','DEFRA','Postal','Ireland'];
+const typeLabel = {delivery:'In flight delivery',shaping:'Shaping',tender:'Competitive tender',sold:'Sold – TBC',opp:'Opportunity'};
+const typeCls   = {delivery:'green',shaping:'blue',tender:'amber',sold:'purple',opp:'gray'};
+const dotCol    = {green:'var(--green)',amber:'var(--amber)',gray:'#aaa'};
+
+const CAMP_DEFS = [
+  {id:'camp1',title:'Productivity & efficiency gains'},
+  {id:'camp2',title:'AI in Cyber'},
+  {id:'camp3',title:'Security of AI'},
+  {id:'camp4',title:'Application of AI (Intelligence & Operations)'},
+  {id:'camp5',title:'AI Assurance'},
+  {id:'camp6',title:'AI Strategy'},
+  {id:'camp7',title:'AI for Supply Chain'},
+];
+
+// Seed data — only inserted if tables are empty
+const SEED_MATRIX = [
+  {id:'c1',acct:'HMRC',lead_id:'cl',text:'AI use case analysis & prioritisation',status:'green',sort_order:0},
+  {id:'c2',acct:'HMRC',lead_id:'cl',text:'Governance framework development',status:'amber',sort_order:1},
+  {id:'c3',acct:'HMRC',lead_id:'cl',text:'Squad capability building',status:'green',sort_order:2},
+  {id:'c5',acct:'Ministry of Defence',lead_id:'cl',text:'Programme board setup (inc. A+D)',status:'green',sort_order:0},
+  {id:'c6',acct:'Ministry of Defence',lead_id:'cl',text:'Maynard Williams chair engagement',status:'amber',sort_order:1},
+  {id:'c7',acct:'Public Safety',lead_id:'cl',text:'Initial scoping under way',status:'gray',sort_order:0},
+  {id:'c8',acct:'Health',lead_id:'cl',text:'Use case pipeline review',status:'gray',sort_order:0},
+  {id:'c9',acct:'HMRC',lead_id:'vp',text:'Ecosystem integration mapping',status:'amber',sort_order:3},
+  {id:'c10',acct:'Ministry of Defence',lead_id:'vp',text:'Risk mitigation review',status:'green',sort_order:2},
+  {id:'c11',acct:'Public Safety',lead_id:'vp',text:'Governance standards rollout',status:'green',sort_order:1},
+  {id:'c12',acct:'Public Safety',lead_id:'vp',text:'Stakeholder engagement plan',status:'amber',sort_order:2},
+  {id:'c13',acct:'Health',lead_id:'vp',text:'AI readiness assessment',status:'green',sort_order:1},
+  {id:'c14',acct:'DWP',lead_id:'vp',text:'Delivery tracking dashboard',status:'gray',sort_order:0},
+  {id:'c15',acct:'DEFRA',lead_id:'vp',text:'Data strategy alignment',status:'amber',sort_order:0},
+  {id:'c16',acct:'Ireland',lead_id:'vp',text:'Cross-border data framework',status:'gray',sort_order:0},
+  {id:'c17',acct:'Ministry of Defence',lead_id:'nc',text:'AI ethics board representation',status:'green',sort_order:3},
+  {id:'c18',acct:'Health',lead_id:'nc',text:'Clinical AI governance review',status:'amber',sort_order:2},
+  {id:'c19',acct:'Health',lead_id:'nc',text:'NHS data pipeline scoping',status:'amber',sort_order:3},
+  {id:'c20',acct:'DWP',lead_id:'nc',text:'Automation use case shortlist',status:'green',sort_order:1},
+  {id:'c21',acct:'DWP',lead_id:'nc',text:'Benefits processing AI pilot',status:'amber',sort_order:2},
+  {id:'c22',acct:'DEFRA',lead_id:'nc',text:'Environmental data AI initiative',status:'gray',sort_order:1},
+  {id:'c23',acct:'Postal',lead_id:'nc',text:'Route optimisation POC',status:'green',sort_order:0},
+  {id:'c24',acct:'HMRC',lead_id:'kr',text:'Centralised repository curation',status:'green',sort_order:4},
+  {id:'c25',acct:'Public Safety',lead_id:'kr',text:'Predictive policing ethics review',status:'amber',sort_order:3},
+  {id:'c26',acct:'DWP',lead_id:'kr',text:'Fraud detection AI scoping',status:'gray',sort_order:3},
+  {id:'c27',acct:'DEFRA',lead_id:'kr',text:'Flood risk AI model',status:'green',sort_order:2},
+  {id:'c28',acct:'DEFRA',lead_id:'kr',text:'Agriculture data pilot',status:'amber',sort_order:3},
+  {id:'c29',acct:'Postal',lead_id:'kr',text:'Demand forecasting initiative',status:'amber',sort_order:1},
+  {id:'c30',acct:'Ireland',lead_id:'kr',text:'Public sector AI sandbox',status:'green',sort_order:1},
+  {id:'c31',acct:'HMRC',lead_id:'cg',text:'SME knowledge capture',status:'green',sort_order:5},
+  {id:'c32',acct:'Ministry of Defence',lead_id:'cg',text:'Cross-sector capability share',status:'gray',sort_order:4},
+  {id:'c33',acct:'Health',lead_id:'cg',text:'Healthcare AI best practice guide',status:'amber',sort_order:4},
+  {id:'c34',acct:'DEFRA',lead_id:'cg',text:'Agri-tech innovation support',status:'green',sort_order:4},
+  {id:'c35',acct:'Postal',lead_id:'cg',text:'Digital transformation advisory',status:'gray',sort_order:2},
+  {id:'c36',acct:'Ireland',lead_id:'cg',text:'Ecosystem partner engagement',status:'amber',sort_order:2},
+];
+
+const SEED_PROJECTS = [
+  {id:'p1',camp_id:'camp1',name:'NAV AI PoC – D2S (Azure)',type:'delivery',owner:'',description:'',month:'',sort_order:0},
+  {id:'p2',camp_id:'camp1',name:'MAB: Disclosure solution agentic extension into D2S with Accelleo',type:'delivery',owner:'',description:'',month:'',sort_order:1},
+  {id:'p3',camp_id:'camp1',name:'Air: CM Command Boarding APP',type:'delivery',owner:'',description:'',month:'',sort_order:2},
+  {id:'p4',camp_id:'camp1',name:'Air: CM Engagement Tool',type:'delivery',owner:'',description:'',month:'',sort_order:3},
+  {id:'p5',camp_id:'camp1',name:'Air: Agentic solution for productivity',type:'shaping',owner:'',description:'',month:'',sort_order:4},
+  {id:'p6',camp_id:'camp1',name:'Air: AI for Appivate Dev efficiency',type:'shaping',owner:'',description:'',month:'',sort_order:5},
+  {id:'p7',camp_id:'camp1',name:'Air: AI for airbasing availability & readiness (1+11 group)',type:'shaping',owner:'Paul Cannon',description:'',month:'',sort_order:6},
+  {id:'p8',camp_id:'camp1',name:'NAD AI Showcase',type:'shaping',owner:'',description:'',month:'',sort_order:7},
+  {id:'p9',camp_id:'camp1',name:'IT Service Desk',type:'opp',owner:'',description:'',month:'',sort_order:8},
+  {id:'p10',camp_id:'camp2',name:'Potential to automate CylSoC (MoD AB)',type:'shaping',owner:'',description:'',month:'',sort_order:0},
+  {id:'p11',camp_id:'camp2',name:'Secure by Design assessments (MoD AB)',type:'shaping',owner:'',description:'',month:'',sort_order:1},
+  {id:'p12',camp_id:'camp2',name:'Autonomous Defensive Cyber (Frazer-Nash)',type:'tender',owner:'',description:'',month:'',sort_order:2},
+  {id:'p13',camp_id:'camp3',name:'NATO: AI Supply Chain Security (April start – 1 year)',type:'delivery',owner:'Edward Birrell / Alistair Rogers',description:'',month:'',sort_order:0},
+  {id:'p14',camp_id:'camp3',name:'Palantir and Lotus',type:'shaping',owner:'',description:'',month:'',sort_order:1},
+  {id:'p15',camp_id:'camp3',name:'Pen testing of LLMs',type:'opp',owner:'',description:'',month:'',sort_order:2},
+  {id:'p16',camp_id:'camp4',name:'Spotter ML Ops',type:'delivery',owner:'Tom Whittaker',description:'',month:'',sort_order:0},
+  {id:'p17',camp_id:'camp4',name:'Picasso',type:'delivery',owner:'',description:'',month:'',sort_order:1},
+  {id:'p18',camp_id:'camp4',name:'DICP',type:'delivery',owner:'',description:'',month:'',sort_order:2},
+  {id:'p19',camp_id:'camp4',name:'SDA UKSF',type:'delivery',owner:'',description:'',month:'',sort_order:3},
+  {id:'p20',camp_id:'camp4',name:"NATO: Maven",type:'delivery',owner:"Kevin O'Brien",description:'',month:'',sort_order:4},
+  {id:'p21',camp_id:'camp4',name:'MAB: Modelling and Simulation',type:'delivery',owner:'',description:'',month:'',sort_order:5},
+  {id:'p22',camp_id:'camp4',name:'MAB: Maritime DTW mobilisation',type:'delivery',owner:'',description:'',month:'',sort_order:6},
+  {id:'p23',camp_id:'camp4',name:'DAIC Support',type:'shaping',owner:'',description:'',month:'',sort_order:7},
+  {id:'p24',camp_id:'camp4',name:'DAIC DASA',type:'shaping',owner:'',description:'',month:'',sort_order:8},
+  {id:'p25',camp_id:'camp4',name:'Space Command ISR Automation – with AWS',type:'opp',owner:'',description:'',month:'',sort_order:9},
+  {id:'p26',camp_id:'camp5',name:'MOD AB – Policy v1.0',type:'delivery',owner:'',description:'',month:'',sort_order:0},
+  {id:'p27',camp_id:'camp5',name:'MOD AB – Governance Launch',type:'delivery',owner:'',description:'',month:'',sort_order:1},
+  {id:'p28',camp_id:'camp5',name:'MOD AB – AI Literacy',type:'delivery',owner:'',description:'',month:'',sort_order:2},
+  {id:'p29',camp_id:'camp5',name:'CSOC AI Governance',type:'shaping',owner:'Alastair Bowden',description:'',month:'',sort_order:3},
+  {id:'p30',camp_id:'camp5',name:'Responsible AI roadmap for Defence',type:'shaping',owner:'',description:'',month:'',sort_order:4},
+  {id:'p31',camp_id:'camp6',name:'MAB: Data and AI Strategy into CTO',type:'delivery',owner:'',description:'',month:'',sort_order:0},
+  {id:'p32',camp_id:'camp6',name:'NATO: Cross-COI Semantic Reference Model',type:'delivery',owner:'',description:'',month:'',sort_order:1},
+  {id:'p33',camp_id:'camp6',name:'NATO: Ontologist to support Standardisation office',type:'delivery',owner:'',description:'',month:'',sort_order:2},
+  {id:'p34',camp_id:'camp6',name:'NATO: Semantic hosting platform',type:'delivery',owner:'',description:'',month:'',sort_order:3},
+  {id:'p35',camp_id:'camp7',name:'BMFS D2SP DEEAMS / DLIS Programme Support',type:'delivery',owner:'Graham Malley',description:'',month:'',sort_order:0},
+  {id:'p36',camp_id:'camp7',name:'BMfS – DLIS SI',type:'delivery',owner:'',description:'',month:'',sort_order:1},
+  {id:'p37',camp_id:'camp7',name:'BMFS – Control Tower',type:'delivery',owner:'Hiren Patel / Will Wickens',description:'',month:'',sort_order:2},
+  {id:'p38',camp_id:'camp7',name:'IBP – Submarines',type:'delivery',owner:'Simon Thacker',description:'',month:'',sort_order:3},
+  {id:'p39',camp_id:'camp7',name:'FDSS – Torus Consortium',type:'shaping',owner:'',description:'',month:'',sort_order:4},
+  {id:'p40',camp_id:'camp7',name:'Future Defence Support Services (FDSS)',type:'tender',owner:'Simon Thacker / Jodie Jeffcoate',description:'',month:'',sort_order:5},
+  {id:'p41',camp_id:'camp7',name:'Control Tower DIPS Recompete',type:'opp',owner:'',description:'',month:'',sort_order:6},
+];
+
+// ══════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════
+let matrixItems = [];   // flat array from DB
+let modProjects = [];   // flat array from DB
+let activeFilter = 'all';
+let activeDashFilter = 'all';
+let editCtx = null;
+let projCtx = null;
+let dragSrcId = null;
+let dragSrcAcct = null;
+
+// ══════════════════════════════════════════
+// SYNC INDICATOR
+// ══════════════════════════════════════════
+function setSyncing(state) {
+  ['sync-dot','sync-dot2'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'sync-dot' + (state === 'syncing' ? ' syncing' : state === 'error' ? ' error' : '');
+  });
+  ['sync-label','sync-label2'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = state === 'syncing' ? 'Saving…' : state === 'error' ? 'Error' : 'Live';
+  });
+}
+
+// ══════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, 2500);
+}
+
+// ══════════════════════════════════════════
+// INIT — LOAD DATA + SEED IF EMPTY + SUBSCRIBE
+// ══════════════════════════════════════════
+async function init() {
+  try {
+    // Load both tables
+    const [mr, pr] = await Promise.all([
+      sb.from('matrix_items').select('*').order('sort_order'),
+      sb.from('mod_projects').select('*').order('sort_order'),
+    ]);
+
+    // Seed if empty
+    if (!mr.data || mr.data.length === 0) {
+      await sb.from('matrix_items').insert(SEED_MATRIX);
+      matrixItems = SEED_MATRIX.slice();
+    } else {
+      matrixItems = mr.data;
+    }
+
+    if (!pr.data || pr.data.length === 0) {
+      await sb.from('mod_projects').insert(SEED_PROJECTS);
+      modProjects = SEED_PROJECTS.slice();
+    } else {
+      modProjects = pr.data;
+    }
+
+    // Subscribe to real-time changes
+    sb.channel('matrix_items')
+      .on('postgres_changes', {event:'*', schema:'public', table:'matrix_items'}, function(payload) {
+        handleMatrixChange(payload);
+      })
+      .subscribe();
+
+    sb.channel('mod_projects')
+      .on('postgres_changes', {event:'*', schema:'public', table:'mod_projects'}, function(payload) {
+        handleProjectChange(payload);
+      })
+      .subscribe();
+
+    document.getElementById('loading-screen').classList.add('hidden');
+
+    // Show the correct view based on URL parameter
+    const isDashView = new URLSearchParams(window.location.search).get('view') === 'dashboard';
+    if (isDashView) {
+      document.getElementById('view-matrix').classList.remove('active');
+      document.getElementById('view-dashboard').classList.add('active');
+      document.getElementById('cg-select').value = 'mod';
+      renderDashboard();
+    } else {
+      renderMatrix();
+      renderStats();
+    }
+
+  } catch(e) {
+    document.querySelector('#loading-screen .loading-text').textContent = 'Failed to connect. Please refresh.';
+    setSyncing('error');
+  }
+}
+
+// ══════════════════════════════════════════
+// REAL-TIME HANDLERS
+// ══════════════════════════════════════════
+function handleMatrixChange(payload) {
+  const {eventType, new: nw, old} = payload;
+  if (eventType === 'INSERT') {
+    if (!matrixItems.find(function(x){return x.id===nw.id;})) matrixItems.push(nw);
+  } else if (eventType === 'UPDATE') {
+    const idx = matrixItems.findIndex(function(x){return x.id===nw.id;});
+    if (idx > -1) matrixItems[idx] = nw; else matrixItems.push(nw);
+  } else if (eventType === 'DELETE') {
+    matrixItems = matrixItems.filter(function(x){return x.id!==old.id;});
+  }
+  renderMatrix();
+  renderStats();
+}
+
+function handleProjectChange(payload) {
+  const {eventType, new: nw, old} = payload;
+  if (eventType === 'INSERT') {
+    if (!modProjects.find(function(x){return x.id===nw.id;})) modProjects.push(nw);
+  } else if (eventType === 'UPDATE') {
+    const idx = modProjects.findIndex(function(x){return x.id===nw.id;});
+    if (idx > -1) modProjects[idx] = nw; else modProjects.push(nw);
+  } else if (eventType === 'DELETE') {
+    modProjects = modProjects.filter(function(x){return x.id!==old.id;});
+  }
+  if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+}
+
+// ══════════════════════════════════════════
+// MATRIX RENDERING
+// ══════════════════════════════════════════
+function itemsForAcct(acct) {
+  return matrixItems
+    .filter(function(i){return i.acct===acct;})
+    .sort(function(a,b){return a.sort_order-b.sort_order;});
+}
+
+function renderStats() {
+  const inprog = matrixItems.filter(function(i){return i.status==='green';}).length;
+  const todo   = matrixItems.filter(function(i){return i.status==='amber';}).length;
+  document.getElementById('stats').innerHTML =
+    '<div class="stat'+(activeFilter==='all'?' active':'')+'" onclick="setFilter(\'all\')"><div class="stat-label">Total Actions</div><div class="stat-val" style="color:var(--purple)">'+(inprog+todo)+'</div></div>'+
+    '<div class="stat'+(activeFilter==='green'?' active':'')+'" onclick="setFilter(\'green\')"><div class="stat-label">In Progress</div><div class="stat-val green">'+inprog+'</div></div>'+
+    '<div class="stat'+(activeFilter==='amber'?' active':'')+'" onclick="setFilter(\'amber\')"><div class="stat-label">To Do</div><div class="stat-val amber">'+todo+'</div></div>';
+}
+
+function setFilter(f) {
+  activeFilter = f;
+  ['all','green','amber'].forEach(function(x) {
+    const b = document.getElementById('fb-'+x);
+    if (b) b.classList.toggle('active', x===f);
+  });
+  renderStats();
+  applyFilter();
+}
+
+function applyFilter() {
+  document.querySelectorAll('.init-row[data-status]').forEach(function(r) {
+    (activeFilter==='all'||r.dataset.status===activeFilter) ? r.classList.remove('faded') : r.classList.add('faded');
+  });
+}
+
+function renderMatrix() {
+  const tbody = document.getElementById('matrix-body');
+  let html = '';
+  accounts.forEach(function(acct) {
+    const items = itemsForAcct(acct);
+    const acctKey = acct.replace(/'/g,'&apos;');
+    let cell = '<div class="inits-list" data-acct="'+acctKey+'">';
+    items.forEach(function(i) {
+      cell += '<div class="init-row" data-status="'+i.status+'" data-id="'+i.id+'" data-acct="'+acctKey+'" draggable="true">'+
+        '<span class="drag-handle" title="Drag to reorder">⠿</span>'+
+        '<span class="init-dot" style="background:'+dotCol[i.status]+'"></span>'+
+        '<span class="init-text">'+esc(i.text)+'</span>'+
+        '<div class="init-actions">'+
+        '<button class="ia-btn" title="Edit" onclick="openEditModal(\''+i.id+'\')">✎</button>'+
+        '<button class="ia-btn done" title="Mark complete" onclick="markDone(\''+i.id+'\')">✓</button>'+
+        '<button class="ia-btn del" title="Remove" onclick="removeInit(\''+i.id+'\')">✕</button>'+
+        '</div></div>';
+    });
+    cell += '</div>';
+    if (!items.length) cell = '<div class="empty-cell">No actions</div>' + cell;
+    cell += '<button class="add-init-btn" onclick="openAddModal(\''+acctKey+'\')">+ add action</button>';
+    html += '<tr><td class="acct-cell"><div class="acct-name">'+esc(acct)+'</div></td><td class="inits-cell">'+cell+'</td></tr>';
+  });
+  tbody.innerHTML = html;
+  applyFilter();
+  initDragAndDrop();
+}
+
+// ══════════════════════════════════════════
+// DRAG AND DROP
+// ══════════════════════════════════════════
+function initDragAndDrop() {
+  document.querySelectorAll('.init-row[draggable]').forEach(function(row) {
+    row.addEventListener('dragstart', function(e) {
+      dragSrcId = row.dataset.id;
+      dragSrcAcct = row.dataset.acct;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', function() {
+      row.classList.remove('dragging');
+      document.querySelectorAll('.init-row.drag-over').forEach(function(r){r.classList.remove('drag-over');});
+    });
+    row.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      document.querySelectorAll('.init-row.drag-over').forEach(function(r){r.classList.remove('drag-over');});
+      if (row.dataset.id !== dragSrcId) row.classList.add('drag-over');
+    });
+    row.addEventListener('dragleave', function() { row.classList.remove('drag-over'); });
+    row.addEventListener('drop', function(e) {
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      if (!dragSrcId || dragSrcId === row.dataset.id || dragSrcAcct !== row.dataset.acct) return;
+      reorderItems(row.dataset.acct, dragSrcId, row.dataset.id);
+    });
+  });
+}
+
+async function reorderItems(acct, fromId, toId) {
+  const items = itemsForAcct(acct);
+  const fromIdx = items.findIndex(function(i){return i.id===fromId;});
+  const toIdx   = items.findIndex(function(i){return i.id===toId;});
+  if (fromIdx < 0 || toIdx < 0) return;
+  const reordered = items.slice();
+  const [moved] = reordered.splice(fromIdx, 1);
+  reordered.splice(toIdx, 0, moved);
+  // Update sort_order locally first for instant feedback
+  reordered.forEach(function(item, idx) { item.sort_order = idx; });
+  renderMatrix();
+  // Persist to DB
+  setSyncing('syncing');
+  try {
+    await Promise.all(reordered.map(function(item) {
+      return sb.from('matrix_items').update({sort_order: item.sort_order}).eq('id', item.id);
+    }));
+    setSyncing('live');
+  } catch(e) { setSyncing('error'); }
+}
+
+// ══════════════════════════════════════════
+// MATRIX EDIT FUNCTIONS
+// ══════════════════════════════════════════
+function openEditModal(id) {
+  const item = matrixItems.find(function(x){return x.id===id;});
+  if (!item) return;
+  editCtx = {type:'edit', id};
+  document.getElementById('edit-modal-title').textContent = 'Edit action';
+  document.getElementById('em-text').value = item.text;
+  document.getElementById('em-status').value = item.status==='gray' ? 'amber' : item.status;
+  document.getElementById('edit-modal').classList.add('open');
+  setTimeout(function(){document.getElementById('em-text').focus();}, 50);
+}
+
+function openAddModal(acct) {
+  editCtx = {type:'add', acct};
+  document.getElementById('edit-modal-title').textContent = 'Add action';
+  document.getElementById('em-text').value = '';
+  document.getElementById('em-status').value = 'green';
+  document.getElementById('edit-modal').classList.add('open');
+  setTimeout(function(){document.getElementById('em-text').focus();}, 50);
+}
+
+async function saveEditModal() {
+  const text   = document.getElementById('em-text').value.trim();
+  const status = document.getElementById('em-status').value;
+  if (!text) return;
+  setSyncing('syncing');
+  try {
+    if (editCtx.type === 'edit') {
+      const {error} = await sb.from('matrix_items').update({text, status}).eq('id', editCtx.id);
+      if (error) throw error;
+      const item = matrixItems.find(function(x){return x.id===editCtx.id;});
+      if (item) { item.text=text; item.status=status; }
+    } else {
+      const maxOrder = matrixItems.filter(function(x){return x.acct===editCtx.acct;})
+        .reduce(function(m,x){return Math.max(m,x.sort_order);}, -1);
+      const newItem = {id:'x'+Date.now(), acct:editCtx.acct, lead_id:'cl', text, status, sort_order:maxOrder+1};
+      const {error} = await sb.from('matrix_items').insert(newItem);
+      if (error) throw error;
+      matrixItems.push(newItem);
+    }
+    setSyncing('live');
+    toast(editCtx.type==='edit' ? 'Action updated' : 'Action added');
+  } catch(e) { setSyncing('error'); toast('Error saving — please retry'); }
+  closeEditModal();
+  renderMatrix();
+  renderStats();
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.remove('open');
+  editCtx = null;
+}
+
+async function markDone(id) {
+  if (!confirm('Mark this action as complete and remove it?')) return;
+  setSyncing('syncing');
+  const {error} = await sb.from('matrix_items').delete().eq('id', id);
+  if (error) { setSyncing('error'); return; }
+  matrixItems = matrixItems.filter(function(x){return x.id!==id;});
+  setSyncing('live');
+  toast('Action marked complete');
+  renderMatrix(); renderStats();
+}
+
+async function removeInit(id) {
+  if (!confirm('Remove this action?')) return;
+  setSyncing('syncing');
+  const {error} = await sb.from('matrix_items').delete().eq('id', id);
+  if (error) { setSyncing('error'); return; }
+  matrixItems = matrixItems.filter(function(x){return x.id!==id;});
+  setSyncing('live');
+  toast('Action removed');
+  renderMatrix(); renderStats();
+}
+
+// ══════════════════════════════════════════
+// VIEW SWITCHING
+// ══════════════════════════════════════════
+function showMatrix() {
+  document.getElementById('view-matrix').classList.add('active');
+  document.getElementById('view-dashboard').classList.remove('active');
+}
+
+function showDashboard() {
+  document.getElementById('view-matrix').classList.remove('active');
+  document.getElementById('view-dashboard').classList.add('active');
+  document.getElementById('cg-select').value = 'mod';
+  renderDashboard();
+}
+
+function onClientGroupChange(val) {
+  if (val === 'mod') { renderDashboard(); return; }
+  const sel = document.getElementById('cg-select');
+  const name = val ? sel.options[sel.selectedIndex].text : '';
+  document.getElementById('dash-content').innerHTML = val
+    ? '<div class="client-coming-soon"><div class="client-coming-title">'+esc(name)+'</div>Dashboard coming soon.</div>'
+    : '<div class="client-coming-soon">Select a client group to view its dashboard.</div>';
+}
+
+// ══════════════════════════════════════════
+// DASHBOARD RENDERING
+// ══════════════════════════════════════════
+function setDashFilter(f) {
+  activeDashFilter = f;
+  ['all','delivery','shaping','tender','opp'].forEach(function(x) {
+    const b = document.getElementById('dfb-'+x);
+    if (b) b.classList.toggle('active', x===f);
+  });
+  renderDashboard();
+}
+
+function renderDashboard() {
+  const container = document.getElementById('dash-content');
+  let html = '';
+  CAMP_DEFS.forEach(function(camp) {
+    const projs = modProjects
+      .filter(function(p){ return p.camp_id===camp.id && (activeDashFilter==='all'||p.type===activeDashFilter); })
+      .sort(function(a,b){return a.sort_order-b.sort_order;});
+    if (!projs.length && activeDashFilter !== 'all') return;
+    html += '<div class="dash-section">';
+    html += '<div class="ds-title-row"><div class="ds-title">'+esc(camp.title)+'</div>'+
+      '<button class="ds-add-btn" onclick="openAddProj(\''+camp.id+'\')">+ add project</button></div>';
+    if (!projs.length) {
+      html += '<div style="padding:12px 16px;font-size:12px;color:var(--text3);font-style:italic">No projects in this category.</div>';
+    } else {
+      html += '<table class="proj-table" data-camp="'+camp.id+'"><thead><tr>'+
+        '<th style="width:22%">Project</th><th style="width:12%">Type</th><th style="width:12%">Owner</th><th style="width:16%">Description</th><th style="width:10%">Target month</th><th style="width:20%">Project actions</th><th style="width:80px"></th></tr></thead><tbody>';
+      projs.forEach(function(p) {
+        const month = p.month ? formatMonth(p.month) : '<span class="month-none">not set</span>';
+        const tipOwner = p.owner ? esc(p.owner) : '<span class="proj-tooltip-empty">not set</span>';
+        const tipDesc  = p.description ? esc(p.description) : '<span class="proj-tooltip-empty">not set</span>';
+        const actions  = parseActions(p.actions);
+        const actionsHtml = actions.length
+          ? actions.map(function(a){return '<div class="proj-action-item"><span class="proj-action-dot"></span>'+esc(a)+'</div>';}).join('')
+          : '<span class="month-none">none</span>';
+        const ownerDisp = p.owner ? esc(p.owner) : '<span class="month-none">—</span>';
+        const descDisp  = p.description ? esc(p.description) : '<span class="month-none">—</span>';
+        html += '<tr draggable="true" data-proj-id="'+p.id+'" data-camp-id="'+camp.id+'">'+
+          '<td class="proj-name-cell">'+
+            '<div class="proj-name-wrap"><span class="proj-drag-handle" title="Drag to reorder">⠿</span>'+
+            '<div class="proj-name-text">'+esc(p.name)+'</div></div>'+
+          '</td>'+
+          '<td><span class="spill '+typeCls[p.type]+'">'+typeLabel[p.type]+'</span></td>'+
+          '<td class="month-cell">'+ownerDisp+'</td>'+
+          '<td class="month-cell" style="font-size:11px;color:var(--text2)">'+descDisp+'</td>'+
+          '<td class="month-cell">'+month+'</td>'+
+          '<td class="proj-actions-col">'+actionsHtml+'</td>'+
+          '<td class="proj-act-cell">'+
+            '<button class="proj-act-btn" onclick="openEditProj(\''+p.id+'\')">✎ Edit</button>'+
+            '<button class="proj-act-btn del" onclick="removeProj(\''+p.id+'\')">✕</button>'+
+          '</td></tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div>';
+  });
+  container.innerHTML = html;
+  initProjDragAndDrop();
+}
+
+// ══════════════════════════════════════════
+// PROJECT DRAG AND DROP
+// ══════════════════════════════════════════
+let projDragSrcId = null;
+let projDragCampId = null;
+
+function initProjDragAndDrop() {
+  document.querySelectorAll('.proj-table tbody tr[draggable]').forEach(function(row) {
+    row.addEventListener('dragstart', function(e) {
+      projDragSrcId  = row.dataset.projId;
+      projDragCampId = row.dataset.campId;
+      row.classList.add('proj-row-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', function() {
+      row.classList.remove('proj-row-dragging');
+      document.querySelectorAll('.proj-row-dragover').forEach(function(r){r.classList.remove('proj-row-dragover');});
+    });
+    row.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      document.querySelectorAll('.proj-row-dragover').forEach(function(r){r.classList.remove('proj-row-dragover');});
+      if (row.dataset.projId !== projDragSrcId) row.classList.add('proj-row-dragover');
+    });
+    row.addEventListener('dragleave', function() { row.classList.remove('proj-row-dragover'); });
+    row.addEventListener('drop', function(e) {
+      e.preventDefault();
+      row.classList.remove('proj-row-dragover');
+      if (!projDragSrcId || projDragSrcId === row.dataset.projId || projDragCampId !== row.dataset.campId) return;
+      reorderProjects(projDragCampId, projDragSrcId, row.dataset.projId);
+    });
+  });
+}
+
+async function reorderProjects(campId, fromId, toId) {
+  const items = modProjects
+    .filter(function(p){return p.camp_id===campId;})
+    .sort(function(a,b){return a.sort_order-b.sort_order;});
+  const fromIdx = items.findIndex(function(p){return p.id===fromId;});
+  const toIdx   = items.findIndex(function(p){return p.id===toId;});
+  if (fromIdx<0||toIdx<0) return;
+  const reordered = items.slice();
+  const [moved] = reordered.splice(fromIdx, 1);
+  reordered.splice(toIdx, 0, moved);
+  reordered.forEach(function(p, idx){p.sort_order=idx;});
+  renderDashboard();
+  setSyncing('syncing');
+  try {
+    await Promise.all(reordered.map(function(p){
+      return sb.from('mod_projects').update({sort_order:p.sort_order}).eq('id',p.id);
+    }));
+    setSyncing('live');
+  } catch(e){setSyncing('error');}
+}
+
+// ══════════════════════════════════════════
+// ACTIONS HELPERS (stored as JSON in actions column)
+// ══════════════════════════════════════════
+let pendingActions = [];
+
+function parseActions(raw) {
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch(e){ return []; }
+}
+
+function renderProjActionsList() {
+  const el = document.getElementById('pm-actions-list');
+  if (!pendingActions.length) {
+    el.innerHTML = '<div class="action-empty">No actions added yet.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="action-list">' +
+    pendingActions.map(function(a, idx) {
+      return '<div class="action-list-item">'+
+        '<span class="proj-action-dot" style="flex-shrink:0"></span>'+
+        '<span>'+esc(a)+'</span>'+
+        '<button class="action-remove-btn" onclick="removeProjAction('+idx+')" title="Remove">✕</button>'+
+        '</div>';
+    }).join('') + '</div>';
+}
+
+function addProjAction() {
+  const inp = document.getElementById('pm-action-input');
+  const val = inp.value.trim();
+  if (!val) return;
+  pendingActions.push(val);
+  inp.value = '';
+  renderProjActionsList();
+  inp.focus();
+}
+
+function removeProjAction(idx) {
+  pendingActions.splice(idx, 1);
+  renderProjActionsList();
+}
+
+
+function openEditProj(id) {
+  const p = modProjects.find(function(x){return x.id===id;});
+  if (!p) return;
+  projCtx = {type:'edit', id};
+  pendingActions = parseActions(p.actions);
+  document.getElementById('proj-modal-title').textContent = 'Edit project';
+  document.getElementById('pm-name').value  = p.name;
+  document.getElementById('pm-type').value  = p.type;
+  document.getElementById('pm-owner').value = p.owner||'';
+  document.getElementById('pm-desc').value  = p.description||'';
+  document.getElementById('pm-month').value = p.month||'';
+  document.getElementById('pm-action-input').value = '';
+  renderProjActionsList();
+  document.getElementById('proj-modal').classList.add('open');
+  setTimeout(function(){document.getElementById('pm-name').focus();}, 50);
+}
+
+function openAddProj(campId) {
+  projCtx = {type:'add', campId};
+  pendingActions = [];
+  document.getElementById('proj-modal-title').textContent = 'Add project';
+  ['pm-name','pm-owner','pm-desc','pm-month','pm-action-input'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('pm-type').value = 'delivery';
+  renderProjActionsList();
+  document.getElementById('proj-modal').classList.add('open');
+  setTimeout(function(){document.getElementById('pm-name').focus();}, 50);
+}
+
+async function saveProjModal() {
+  const name    = document.getElementById('pm-name').value.trim();
+  if (!name) return;
+  const type    = document.getElementById('pm-type').value;
+  const owner   = document.getElementById('pm-owner').value.trim();
+  const desc    = document.getElementById('pm-desc').value.trim();
+  const month   = document.getElementById('pm-month').value;
+  const actions = JSON.stringify(pendingActions);
+  setSyncing('syncing');
+
+  // Build update payload — try with actions first, fall back without if column missing
+  async function doSave(includeActions) {
+    const payload = includeActions
+      ? {name,type,owner,description:desc,month,actions}
+      : {name,type,owner,description:desc,month};
+    if (projCtx.type === 'edit') {
+      return sb.from('mod_projects').update(payload).eq('id', projCtx.id);
+    } else {
+      const maxOrder = modProjects.filter(function(x){return x.camp_id===projCtx.campId;})
+        .reduce(function(m,x){return Math.max(m,x.sort_order);}, -1);
+      const np = Object.assign({id:'p'+Date.now(), camp_id:projCtx.campId, sort_order:maxOrder+1}, payload);
+      return sb.from('mod_projects').insert(np).select().single().then(function(res){
+        if (!res.error) modProjects.push(res.data);
+        return res;
+      });
+    }
+  }
+
+  try {
+    let res = await doSave(true);
+    // If actions column doesn't exist yet, retry without it
+    if (res.error && res.error.message && res.error.message.indexOf('actions') !== -1) {
+      res = await doSave(false);
+      if (!res.error) {
+        toast('Saved (run the SQL to enable Actions storage)');
+      }
+    }
+    if (res.error) throw res.error;
+
+    if (projCtx.type === 'edit') {
+      const p = modProjects.find(function(x){return x.id===projCtx.id;});
+      if (p) { p.name=name; p.type=type; p.owner=owner; p.description=desc; p.month=month; p.actions=actions; }
+      toast('Project updated');
+    } else {
+      toast('Project added');
+    }
+    setSyncing('live');
+  } catch(e) {
+    setSyncing('error');
+    toast('Error: ' + (e.message || 'save failed — please retry'));
+    return; // keep modal open so user doesn't lose their edits
+  }
+  closeProjModal();
+  renderDashboard();
+}
+
+function closeProjModal() {
+  document.getElementById('proj-modal').classList.remove('open');
+  projCtx = null;
+}
+
+async function removeProj(id) {
+  if (!confirm('Remove this project?')) return;
+  setSyncing('syncing');
+  const {error} = await sb.from('mod_projects').delete().eq('id', id);
+  if (error) { setSyncing('error'); return; }
+  modProjects = modProjects.filter(function(x){return x.id!==id;});
+  setSyncing('live');
+  toast('Project removed');
+  renderDashboard();
+}
+
+// ══════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════
+function formatMonth(m) {
+  if (!m) return '';
+  const p = m.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[parseInt(p[1],10)-1]+' '+p[0];
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('edit-modal').addEventListener('click', function(e){if(e.target===this)closeEditModal();});
+document.getElementById('proj-modal').addEventListener('click', function(e){if(e.target===this)closeProjModal();});
+
+// ══════════════════════════════════════════
+// START
+// ══════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
